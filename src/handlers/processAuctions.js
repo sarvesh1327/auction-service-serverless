@@ -44,6 +44,14 @@ async function processAuctions(event, context) {
           const updateDB=dynamoDB.update(params(auction.id)).promise();
           const { title, seller, highestBid } = auction;
           const { amount, bidder } = highestBid;
+          if(amount===0&&!bidder){
+            const notifySellernoBid = sendMessage({
+              subject: "Don't cry but you have gone unsold",
+              recipient: seller,
+              body: `Sorry Mate nobody wants you`,
+            });
+            return Promise.all([updateDB, notifySellernoBid]);
+          }
           const notifySeller = sendMessage({
             subject: "Your Item has been sold",
             recipient: seller,
