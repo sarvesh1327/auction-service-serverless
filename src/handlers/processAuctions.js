@@ -3,6 +3,21 @@ import createError from "http-errors";
 import { getEndedFunction } from "../lib/getEndedAuctions";
 
 const dynamoDB = new AWS.DynamoDB.DocumentClient();
+const sqs = new AWS.SQS();
+
+const sendMessage = async ({ recipient, body, subject }) => {
+  return sqs
+    .sendMessage({
+      QueueUrl: process.env.MAIL_QUEUE_URL,
+      MessageBody: JSON.stringify({
+        subject,
+        body,
+        recipient,
+      }),
+    })
+    .promise();
+};
+
 function params(id) {
   return {
     TableName: process.env.AUCTIONS_TABLE_NAME,
@@ -25,7 +40,22 @@ async function processAuctions(event, context) {
 
     if (endedAuctions.length !== 0) {
       endedAuctions = await Promise.all(
-        endedAuctions.map(({ id }) => dynamoDB.update(params(id)).promise())
+        endedAuctions.map((auction) => {
+          const updateDB=dynamoDB.update(params(auction.id)).promise();
+          const { title, seller, highestBid } = auction;
+          const { amount, bidder } = highestBid;
+          const notifySeller = sendMessage({
+            subject: "Your Item has been sold",
+            recipient: seller,
+            body: `Congratulation!! Your stuff ${title} was bought successfully by ${bidder} at $${amount}`,
+          });
+          const notifyBidder = sendMessage({
+            subject: "Yah got it",
+            recipient: bidder,
+            body: `Congo your bid for ${title} of amount $${amount} has been successful`,
+          });
+          return Promise.all([notifyBidder, notifySeller, updateDB]);
+        })
       );
     }
     console.log(endedAuctions);
